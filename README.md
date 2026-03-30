@@ -49,7 +49,7 @@ npm run dev
 ### Step 1: Fork the Repository
 
 1. Visit the main repository  
-   👉 [Kural Admin Repository](https://github.com/NITHISH0728/pep-project)
+   👉 [Admin Repository](https://github.com/NITHISH0728/pep-project)
 2. Click **Fork** (top-right corner)
 3. Your fork will be created at:  
    ```
@@ -61,7 +61,7 @@ npm run dev
 ### Step 2: Clone Your Fork Locally
 
 ```bash
-git clone https://github.com/contributor-name/pep-project.git
+git clone https://github.com/your-username/pep-project.git
 cd pep-project
 ```
 
@@ -70,7 +70,7 @@ cd pep-project
 ### Step 3: Add Upstream Remote (Main Repository)
 
 ```bash
-git remote add upstream https://github.com/your-username/pep-project.git
+git remote add upstream https://github.com/owner-username/pep-project.git
 git fetch upstream
 ```
 
@@ -99,7 +99,6 @@ git checkout -b your-name-branch
 - `docs/` – documentation
 - `chore/` – maintenance tasks
 
-> **Tip:** Use your name as part of the branch name to avoid branch clutter. Example: `yourname-branch`
 
 ---
 
@@ -131,7 +130,7 @@ Then open a **Pull Request** on GitHub with a clear description of your changes.
 
 ## 🔍 For Admins (Review & Merge)
 
-### Reviewing Pull Requests
+### Reviewing Pull Requests (branch-on-parent)
 
 1. Check out the PR branch:
 
@@ -186,6 +185,17 @@ git pull origin main
 # Delete the local copy of their feature branch
 git branch -d <branch-name>
 ```
+
+### Reviewing Pull Requests (branch-on-forks)
+
+ Using Github CLI:
+
+ ```bash
+   gh pr checkout 123
+```
+
+   This automatically creates a local branch for you with all their changes.
+   
 ---
 
 ## 📝 Pull Request Template
