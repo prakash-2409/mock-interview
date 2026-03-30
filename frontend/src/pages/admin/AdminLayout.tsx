@@ -1,6 +1,7 @@
 import React from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import './admin.css';
+import devbeezLogo from '../../assets/devbeez-logo.png';
 
 const AdminLayout = () => {
     const navigate = useNavigate();
@@ -11,9 +12,9 @@ const AdminLayout = () => {
     };
 
     const navItems = [
-        { path: '/admin', label: 'Home', exact: true },
-        { path: '/admin/create-test', label: 'Create Test' },
-        { path: '/admin/performance', label: 'Performance' },
+        { path: '/admin', label: 'Dashboard', exact: true },
+        { path: '/admin/create-test', label: 'Manage Quizzes' },
+        { path: '/admin/performance', label: 'Reports' },
         { path: '/admin/onboard', label: 'Onboard Student' },
         { path: '/admin/manage-students', label: 'Manage Students' },
         { path: '/admin/upload-documents', label: 'Upload Documents' },
@@ -23,10 +24,11 @@ const AdminLayout = () => {
         <div className="admin-layout">
             <nav className="admin-nav">
                 <div className="admin-nav-left">
-                    <div className="admin-nav-brand" onClick={() => navigate('/admin')} style={{ cursor: 'pointer' }}>
+                    <div className="admin-nav-brand" onClick={() => navigate('/admin')} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <img src={devbeezLogo} alt="DevBeeZ Logo" style={{ width: '36px', height: 'auto', borderRadius: '4px' }} />
                         <div>
                             <div className="admin-nav-brand-name">DevBeeZ</div>
-                            <div className="admin-nav-brand-tag">Admin Panel</div>
+                            <div className="admin-nav-brand-tag">AdminPortal</div>
                         </div>
                     </div>
                     <div className="admin-nav-links">
