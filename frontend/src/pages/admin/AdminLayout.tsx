@@ -16,6 +16,7 @@ const AdminLayout = () => {
         { path: '/admin/performance', label: 'Performance' },
         { path: '/admin/onboard', label: 'Onboard Student' },
         { path: '/admin/manage-students', label: 'Manage Students' },
+        { path: '/admin/upload-documents', label: 'Upload Documents' },
     ];
 
     return (

@@ -13,6 +13,8 @@ import CreateTest from './pages/admin/CreateTest';
 import Performance from './pages/admin/Performance';
 import OnboardStudent from './pages/admin/OnboardStudent';
 import ManageStudents from './pages/admin/ManageStudents';
+import UploadDocuments from './pages/admin/UploadDocuments';
+import ViewDocuments from './pages/student/ViewDocuments';
 import './index.css';
 
 function App() {
@@ -27,6 +29,7 @@ function App() {
            <Route index element={<StudentHome />} />
            <Route path="quiz" element={<QuizTestList />} />
            <Route path="code" element={<CodeArenaList />} />
+           <Route path="documents" element={<ViewDocuments />} />
            <Route path="take-quiz/:id" element={<TestRunner />} />
            <Route path="take-code/:id" element={<TestRunner />} />
         </Route>
@@ -38,6 +41,7 @@ function App() {
           <Route path="performance" element={<Performance />} />
           <Route path="onboard" element={<OnboardStudent />} />
           <Route path="manage-students" element={<ManageStudents />} />
+          <Route path="upload-documents" element={<UploadDocuments />} />
         </Route>
       </Routes>
     </div>

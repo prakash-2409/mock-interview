@@ -21,6 +21,7 @@ const StudentLayout: React.FC = () => {
           <NavLink to="/student" end className={({isActive}) => isActive ? "student-nav-link active" : "student-nav-link"}>Dashboard</NavLink>
           <NavLink to="/student/quiz" className={({isActive}) => isActive ? "student-nav-link active" : "student-nav-link"}>Quiz Arenas</NavLink>
           <NavLink to="/student/code" className={({isActive}) => isActive ? "student-nav-link active" : "student-nav-link"}>Code Arenas</NavLink>
+          <NavLink to="/student/documents" className={({isActive}) => isActive ? "student-nav-link active" : "student-nav-link"}>Documents</NavLink>
         </div>
         
         <button className="student-profile-btn" onClick={handleLogout}>
