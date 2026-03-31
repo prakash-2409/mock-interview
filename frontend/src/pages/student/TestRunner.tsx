@@ -34,16 +34,6 @@ const TestRunner: React.FC = () => {
 
   const fetchTest = async () => {
     try {
-      const stored = localStorage.getItem('local_tests');
-      const localTests = stored ? JSON.parse(stored) : [];
-      const localMatch = localTests.find((t: any) => String(t.id) === String(id));
-      
-      if (localMatch) {
-         setTest(localMatch);
-         setLoading(false);
-         return;
-      }
-
       const response = await fetch(`http://localhost:5000/api/tests/${id}`).catch(() => null);
       if (response && response.ok) {
         const data = await response.json();

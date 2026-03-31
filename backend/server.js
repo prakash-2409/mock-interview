@@ -4,7 +4,7 @@ const cors = require('cors');
 
 dotenv.config();
 
-const { pool } = require('./db.js');
+const { readDb, writeDb } = require('./jsonDb.js');
 const studentsRoutes = require('./routes/students.js');
 const testsRoutes = require('./routes/tests.js');
 const resultsRoutes = require('./routes/results.js');
@@ -14,124 +14,68 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-// Mount route modules
-app.use('/api/students', studentsRoutes(pool));
-app.use('/api/tests', testsRoutes(pool));
-app.use('/api/results', resultsRoutes(pool));
+// Mount route modules - no need for pool anymore
+app.use('/api/students', studentsRoutes());
+app.use('/api/tests', testsRoutes());
+app.use('/api/results', resultsRoutes());
 
-// Seed data route -- creates all tables and default admin/student users
+// Seed data route - restores initial DB state for db.json
 app.get('/api/seed', async (req, res) => {
     try {
-        // Users table (expanded)
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS users (
-                id SERIAL PRIMARY KEY,
-                email VARCHAR(255) UNIQUE NOT NULL,
-                password VARCHAR(255) NOT NULL,
-                role VARCHAR(50) NOT NULL DEFAULT 'student',
-                name VARCHAR(255),
-                roll_no VARCHAR(50),
-                reg_no VARCHAR(50),
-                department VARCHAR(100),
-                class_section VARCHAR(50),
-                profile_image TEXT,
-                created_at TIMESTAMP DEFAULT NOW()
-            );
-        `);
-
-        // Tests table
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS tests (
-                id SERIAL PRIMARY KEY,
-                title VARCHAR(255) NOT NULL,
-                description TEXT,
-                test_type VARCHAR(20) NOT NULL,
-                duration_minutes INTEGER DEFAULT 60,
-                created_by INTEGER REFERENCES users(id),
-                is_published BOOLEAN DEFAULT false,
-                created_at TIMESTAMP DEFAULT NOW()
-            );
-        `);
-
-        // Quiz questions table
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS quiz_questions (
-                id SERIAL PRIMARY KEY,
-                test_id INTEGER REFERENCES tests(id) ON DELETE CASCADE,
-                question_number INTEGER NOT NULL,
-                question_text TEXT NOT NULL,
-                option_a TEXT NOT NULL,
-                option_b TEXT NOT NULL,
-                option_c TEXT NOT NULL,
-                option_d TEXT NOT NULL,
-                correct_option CHAR(1) NOT NULL,
-                marks INTEGER DEFAULT 1
-            );
-        `);
-
-        // Code problems table
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS code_problems (
-                id SERIAL PRIMARY KEY,
-                test_id INTEGER REFERENCES tests(id) ON DELETE CASCADE,
-                problem_number INTEGER NOT NULL,
-                title VARCHAR(255) NOT NULL,
-                description TEXT NOT NULL,
-                input_format TEXT,
-                output_format TEXT,
-                constraints_text TEXT,
-                sample_input TEXT,
-                sample_output TEXT,
-                marks INTEGER DEFAULT 10
-            );
-        `);
-
-        // Code test cases table
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS code_test_cases (
-                id SERIAL PRIMARY KEY,
-                problem_id INTEGER REFERENCES code_problems(id) ON DELETE CASCADE,
-                input TEXT NOT NULL,
-                expected_output TEXT NOT NULL,
-                is_hidden BOOLEAN DEFAULT false
-            );
-        `);
-
-        // Test results table
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS test_results (
-                id SERIAL PRIMARY KEY,
-                test_id INTEGER REFERENCES tests(id),
-                student_id INTEGER REFERENCES users(id),
-                score DECIMAL(5,2),
-                total_marks INTEGER,
-                submitted_at TIMESTAMP DEFAULT NOW(),
-                status VARCHAR(20) DEFAULT 'completed'
-            );
-        `);
-
-        // Seed default admin and student users
-        await pool.query(`
-            INSERT INTO users (email, password, role, name)
-            VALUES
-                ('admin@gmail.com', '123', 'admin', 'Admin'),
-                ('student@gmail.com', '123', 'student', 'Demo Student')
-            ON CONFLICT (email) DO NOTHING;
-        `);
-
-        res.status(201).json({ message: 'Database seeded successfully. All tables created.' });
+        const initialDbState = {
+            "users": [
+                { "id": 1, "email": "admin@gmail.com", "password": "123", "role": "admin", "name": "Admin" },
+                { "id": 2, "email": "student@gmail.com", "password": "123", "role": "student", "name": "Demo Student", "department": "CSE", "class_section": "A", "roll_no": "24CS360", "reg_no": "3123241040" }
+            ],
+            "tests": [
+                {
+                    "id": 1,
+                    "title": "Sample Quiz Test",
+                    "description": "A basic quiz to test your knowledge.",
+                    "test_type": "quiz",
+                    "duration_minutes": 30,
+                    "created_by": 1,
+                    "is_published": true,
+                    "created_at": new Date().toISOString(),
+                    "questions": [
+                        { "question_number": 1, "question_text": "What is 2 + 2?", "option_a": "3", "option_b": "4", "option_c": "5", "option_d": "6", "correct_option": "B", "marks": 1 }
+                    ]
+                },
+                {
+                    "id": 2,
+                    "title": "Sample Code Test",
+                    "description": "Write a program that prints 'Hello World!' to the console.",
+                    "test_type": "code",
+                    "duration_minutes": 60,
+                    "created_by": 1,
+                    "is_published": true,
+                    "created_at": new Date().toISOString(),
+                    "problems": [
+                        {
+                            "problem_number": 1, "title": "Print Hello World", "description": "Print exactly 'Hello World!' without the quotes.",
+                            "input_format": "None", "output_format": "Hello World!", "constraints_text": "None", "sample_input": "", "sample_output": "Hello World!", "marks": 10,
+                            "test_cases": [ { "input": "", "expected_output": "Hello World!", "is_hidden": false } ]
+                        }
+                    ]
+                }
+            ],
+            "test_results": []
+        };
+        
+        writeDb(initialDbState);
+        res.status(201).json({ message: 'JSON Database seeded successfully.' });
     } catch (error) {
         res.status(500).json({ message: 'Error seeding database', error: error.message });
     }
 });
 
 // Login Route
-app.post('/api/login', async (req, res) => {
+app.post('/api/login', (req, res) => {
     try {
         const { email, password } = req.body;
+        const db = readDb();
 
-        const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-        const user = result.rows[0];
+        const user = db.users.find(u => u.email === email);
 
         if (user && user.password === password) {
             res.json({

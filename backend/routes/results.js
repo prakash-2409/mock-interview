@@ -1,83 +1,93 @@
 const express = require('express');
 const router = express.Router();
+const { readDb, writeDb } = require('../jsonDb');
 
-module.exports = (pool) => {
+module.exports = () => {
 
     // GET /api/results - Get all results with optional test filter
-    router.get('/', async (req, res) => {
+    router.get('/', (req, res) => {
         try {
             const { test_id } = req.query;
-            let query = `
-                SELECT tr.*, u.name as student_name, u.email as student_email, u.reg_no,
-                       t.title as test_title, t.test_type
-                FROM test_results tr
-                JOIN users u ON tr.student_id = u.id
-                JOIN tests t ON tr.test_id = t.id
-            `;
-            const params = [];
+            const db = readDb();
+            
+            let results = db.test_results;
 
             if (test_id) {
-                query += ' WHERE tr.test_id = $1';
-                params.push(test_id);
+                results = results.filter(tr => String(tr.test_id) === String(test_id));
             }
+            
+            // Enrich results
+            results = results.map(tr => {
+                const student = db.users.find(u => u.id === tr.student_id) || {};
+                const test = db.tests.find(t => t.id === tr.test_id) || {};
+                
+                return {
+                    ...tr,
+                    student_name: student.name || 'Unknown',
+                    student_email: student.email || 'Unknown',
+                    reg_no: student.reg_no || 'Unknown',
+                    test_title: test.title || 'Unknown',
+                    test_type: test.test_type || 'Unknown'
+                };
+            }).sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at));
 
-            query += ' ORDER BY tr.submitted_at DESC';
-
-            const result = await pool.query(query, params);
-            res.json(result.rows);
+            res.json(results);
         } catch (error) {
             res.status(500).json({ message: 'Error fetching results', error: error.message });
         }
     });
 
     // GET /api/results/count - Result stats for dashboard
-    router.get('/count', async (req, res) => {
+    router.get('/count', (req, res) => {
         try {
-            const total = await pool.query('SELECT COUNT(*) as total FROM test_results');
-            const pending = await pool.query("SELECT COUNT(*) as total FROM test_results WHERE status = 'pending'");
-            const completed = await pool.query("SELECT COUNT(*) as total FROM test_results WHERE status = 'completed'");
+            const db = readDb();
+            const results = db.test_results;
+            
+            const total = results.length;
+            const pending = results.filter(tr => tr.status === 'pending').length;
+            const completed = results.filter(tr => tr.status === 'completed').length;
 
-            res.json({
-                total: parseInt(total.rows[0].total),
-                pending: parseInt(pending.rows[0].total),
-                completed: parseInt(completed.rows[0].total)
-            });
+            res.json({ total, pending, completed });
         } catch (error) {
             res.status(500).json({ message: 'Error fetching result stats', error: error.message });
         }
     });
 
     // GET /api/results/csv - Download results as CSV
-    router.get('/csv', async (req, res) => {
+    router.get('/csv', (req, res) => {
         try {
             const { test_id } = req.query;
-            let query = `
-                SELECT u.name as "Student Name", u.email as "Email", u.reg_no as "Reg No",
-                       t.title as "Test Name", tr.score as "Score", tr.total_marks as "Total Marks",
-                       tr.submitted_at as "Submitted At"
-                FROM test_results tr
-                JOIN users u ON tr.student_id = u.id
-                JOIN tests t ON tr.test_id = t.id
-            `;
-            const params = [];
+            const db = readDb();
+            
+            let results = db.test_results;
 
             if (test_id) {
-                query += ' WHERE tr.test_id = $1';
-                params.push(test_id);
+                results = results.filter(tr => String(tr.test_id) === String(test_id));
             }
+            
+            // Enrich results
+            results = results.map(tr => {
+                const student = db.users.find(u => u.id === tr.student_id) || {};
+                const test = db.tests.find(t => t.id === tr.test_id) || {};
+                
+                return {
+                    "Student Name": student.name || 'Unknown',
+                    "Email": student.email || 'Unknown',
+                    "Reg No": student.reg_no || 'Unknown',
+                    "Test Name": test.title || 'Unknown',
+                    "Score": tr.score,
+                    "Total Marks": tr.total_marks,
+                    "Submitted At": tr.submitted_at
+                };
+            }).sort((a, b) => (a["Student Name"] || "").localeCompare(b["Student Name"] || ""));
 
-            query += ' ORDER BY u.name ASC';
-
-            const result = await pool.query(query, params);
-
-            if (result.rows.length === 0) {
+            if (results.length === 0) {
                 return res.status(404).json({ message: 'No results found' });
             }
 
-            // Build CSV
-            const headers = Object.keys(result.rows[0]);
+            const headers = Object.keys(results[0]);
             let csv = headers.join(',') + '\n';
-            for (const row of result.rows) {
+            for (const row of results) {
                 const values = headers.map(h => {
                     const val = row[h] !== null && row[h] !== undefined ? String(row[h]) : '';
                     return `"${val.replace(/"/g, '""')}"`;
@@ -94,17 +104,27 @@ module.exports = (pool) => {
     });
 
     // POST /api/results - Submit a test result
-    router.post('/', async (req, res) => {
+    router.post('/', (req, res) => {
         try {
             const { test_id, student_id, score, total_marks, status } = req.body;
-            let query = `
-                INSERT INTO test_results (test_id, student_id, score, total_marks, status)
-                VALUES ($1, $2, $3, $4, $5)
-                RETURNING *
-            `;
-            const result = await pool.query(query, [test_id, student_id, score, total_marks, status || 'completed']);
+            const db = readDb();
             
-            res.status(201).json({ message: 'Test result submitted successfully', result: result.rows[0] });
+            const newResultId = db.test_results.length > 0 ? Math.max(...db.test_results.map(tr => tr.id)) + 1 : 1;
+            
+            const newResult = {
+                id: newResultId,
+                test_id,
+                student_id,
+                score,
+                total_marks,
+                status: status || 'completed',
+                submitted_at: new Date().toISOString()
+            };
+            
+            db.test_results.push(newResult);
+            writeDb(db);
+            
+            res.status(201).json({ message: 'Test result submitted successfully', result: newResult });
         } catch (error) {
             res.status(500).json({ message: 'Error submitting result', error: error.message });
         }

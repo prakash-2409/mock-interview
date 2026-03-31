@@ -4,46 +4,48 @@ const multer = require('multer');
 const Papa = require('papaparse');
 const fs = require('fs');
 const path = require('path');
+const { readDb, writeDb } = require('../jsonDb');
 
-module.exports = (pool) => {
+module.exports = () => {
 
     // GET /api/students - List all students with optional filters
-    router.get('/', async (req, res) => {
+    router.get('/', (req, res) => {
         try {
             const { search, department, class_section } = req.query;
-            let query = "SELECT id, name, email, roll_no, reg_no, department, class_section, created_at FROM users WHERE role = 'student'";
-            const params = [];
-            let paramIndex = 1;
+            const db = readDb();
+            
+            let students = db.users.filter(u => u.role === 'student');
 
             if (search) {
-                query += ` AND (name ILIKE $${paramIndex} OR email ILIKE $${paramIndex} OR roll_no ILIKE $${paramIndex})`;
-                params.push(`%${search}%`);
-                paramIndex++;
+                const searchLower = search.toLowerCase();
+                students = students.filter(s => 
+                    (s.name && s.name.toLowerCase().includes(searchLower)) || 
+                    (s.email && s.email.toLowerCase().includes(searchLower)) || 
+                    (s.roll_no && s.roll_no.toLowerCase().includes(searchLower))
+                );
             }
             if (department) {
-                query += ` AND department = $${paramIndex}`;
-                params.push(department);
-                paramIndex++;
+                students = students.filter(s => s.department === department);
             }
             if (class_section) {
-                query += ` AND class_section = $${paramIndex}`;
-                params.push(class_section);
-                paramIndex++;
+                students = students.filter(s => s.class_section === class_section);
             }
 
-            query += ' ORDER BY name ASC';
-            const result = await pool.query(query, params);
-            res.json(result.rows);
+            // Remove passwords from response
+            students = students.map(({ password, ...rest }) => rest).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+            
+            res.json(students);
         } catch (error) {
             res.status(500).json({ message: 'Error fetching students', error: error.message });
         }
     });
 
     // GET /api/students/count - Dashboard count
-    router.get('/count', async (req, res) => {
+    router.get('/count', (req, res) => {
         try {
-            const result = await pool.query("SELECT COUNT(*) as total FROM users WHERE role = 'student'");
-            res.json({ total: parseInt(result.rows[0].total) });
+            const db = readDb();
+            const count = db.users.filter(u => u.role === 'student').length;
+            res.json({ total: count });
         } catch (error) {
             res.status(500).json({ message: 'Error fetching count', error: error.message });
         }
@@ -58,34 +60,44 @@ module.exports = (pool) => {
     });
 
     // POST /api/students - Create single student
-    router.post('/', async (req, res) => {
+    router.post('/', (req, res) => {
         try {
             const { name, email, reg_no, roll_no, department, class_section } = req.body;
-
-            // Use reg_no as the default password
             const password = reg_no;
+            const db = readDb();
 
-            const result = await pool.query(
-                `INSERT INTO users (name, email, password, role, roll_no, reg_no, department, class_section)
-                 VALUES ($1, $2, $3, 'student', $4, $5, $6, $7)
-                 RETURNING id, name, email, roll_no, reg_no, department, class_section`,
-                [name, email, password, roll_no, reg_no, department, class_section]
-            );
-
-            res.status(201).json({ message: 'Student created successfully', student: result.rows[0] });
-        } catch (error) {
-            if (error.code === '23505') {
-                res.status(409).json({ message: 'A student with this email already exists' });
-            } else {
-                res.status(500).json({ message: 'Error creating student', error: error.message });
+            if (db.users.some(u => u.email === email)) {
+                return res.status(409).json({ message: 'A student with this email already exists' });
             }
+
+            const newId = db.users.length > 0 ? Math.max(...db.users.map(u => u.id)) + 1 : 1;
+            
+            const newStudent = {
+                id: newId,
+                name,
+                email,
+                password,
+                role: 'student',
+                roll_no,
+                reg_no,
+                department,
+                class_section
+            };
+
+            db.users.push(newStudent);
+            writeDb(db);
+
+            const { password: _, ...studentWithoutPassword } = newStudent;
+            res.status(201).json({ message: 'Student created successfully', student: studentWithoutPassword });
+        } catch (error) {
+            res.status(500).json({ message: 'Error creating student', error: error.message });
         }
     });
 
     // POST /api/students/bulk - Bulk upload from CSV
     const upload = multer({ dest: path.join(__dirname, '..', 'uploads') });
 
-    router.post('/bulk', upload.single('file'), async (req, res) => {
+    router.post('/bulk', upload.single('file'), (req, res) => {
         try {
             if (!req.file) {
                 return res.status(400).json({ message: 'No file uploaded' });
@@ -100,9 +112,12 @@ module.exports = (pool) => {
                 return res.status(400).json({ message: 'CSV parsing error', errors: parsed.errors });
             }
 
+            const db = readDb();
             let insertedCount = 0;
             let skippedCount = 0;
             const errors = [];
+            
+            let currentId = db.users.length > 0 ? Math.max(...db.users.map(u => u.id)) + 1 : 1;
 
             for (const row of parsed.data) {
                 const name = row['Name'] || row['name'] || '';
@@ -116,21 +131,27 @@ module.exports = (pool) => {
                     continue;
                 }
 
-                try {
-                    await pool.query(
-                        `INSERT INTO users (name, email, password, role, roll_no, reg_no, department, class_section)
-                         VALUES ($1, $2, $3, 'student', $4, $5, $6, $7)
-                         ON CONFLICT (email) DO NOTHING`,
-                        [name.trim(), email.trim(), regNo.trim(), rollNo.trim(), regNo.trim(), department, classSection.trim()]
-                    );
-                    insertedCount++;
-                } catch (err) {
+                if (db.users.some(u => u.email === email.trim())) {
                     skippedCount++;
-                    errors.push({ email, error: err.message });
+                    errors.push({ email, error: "Email already exists" });
+                    continue;
                 }
+
+                db.users.push({
+                    id: currentId++,
+                    name: name.trim(),
+                    email: email.trim(),
+                    password: regNo.trim(),
+                    role: 'student',
+                    roll_no: rollNo.trim(),
+                    reg_no: regNo.trim(),
+                    department,
+                    class_section: classSection.trim()
+                });
+                insertedCount++;
             }
 
-            // Clean up uploaded file
+            writeDb(db);
             fs.unlinkSync(req.file.path);
 
             res.status(201).json({
@@ -144,31 +165,39 @@ module.exports = (pool) => {
         }
     });
 
-    // PUT /api/students/:id/profile-pic - Update profile image (base64)
-    router.put('/:id/profile-pic', async (req, res) => {
+    // PUT /api/students/:id/profile-pic - Update profile image
+    router.put('/:id/profile-pic', (req, res) => {
         try {
             const { id } = req.params;
             const { profile_image } = req.body;
+            const db = readDb();
             
-            const result = await pool.query(
-                "UPDATE users SET profile_image = $1 WHERE id = $2 AND role = 'student' RETURNING id, profile_image",
-                [profile_image, id]
-            );
+            const studentIndex = db.users.findIndex(u => String(u.id) === String(id) && u.role === 'student');
             
-            if (result.rows.length === 0) {
+            if (studentIndex === -1) {
                 return res.status(404).json({ message: 'Student not found' });
             }
-            res.json({ message: 'Profile picture updated successfully', user: result.rows[0] });
+            
+            db.users[studentIndex].profile_image = profile_image;
+            writeDb(db);
+            
+            res.json({ message: 'Profile picture updated successfully', user: { id: db.users[studentIndex].id, profile_image } });
         } catch (error) {
             res.status(500).json({ message: 'Error updating profile picture', error: error.message });
         }
     });
 
     // DELETE /api/students/:id - Delete student
-    router.delete('/:id', async (req, res) => {
+    router.delete('/:id', (req, res) => {
         try {
             const { id } = req.params;
-            await pool.query("DELETE FROM users WHERE id = $1 AND role = 'student'", [id]);
+            const db = readDb();
+            
+            db.users = db.users.filter(u => !(String(u.id) === String(id) && u.role === 'student'));
+            // Remove test results as well
+            db.test_results = db.test_results.filter(tr => String(tr.student_id) !== String(id));
+            
+            writeDb(db);
             res.json({ message: 'Student deleted successfully' });
         } catch (error) {
             res.status(500).json({ message: 'Error deleting student', error: error.message });

@@ -101,12 +101,6 @@ const CreateTest = () => {
                 ? { ...payload_base, questions, test_type: 'quiz' }
                 : { ...payload_base, problems, test_type: 'code' };
 
-            // Dev bypass: Save to localStorage in case DB is unconnected
-            const stored = localStorage.getItem('local_tests');
-            const localTests = stored ? JSON.parse(stored) : [];
-            localTests.push(body);
-            localStorage.setItem('local_tests', JSON.stringify(localTests));
-
             const res = await fetch(endpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -117,8 +111,7 @@ const CreateTest = () => {
                 const data = await res.json();
                 setAlert({ type: 'success', message: data.message });
             } else {
-                // If backend fails but localStorage succeeds, simulate success
-                setAlert({ type: 'success', message: 'Test published locally (DB bypassed).' });
+                setAlert({ type: 'error', message: 'Failed to publish test. Server error.' });
             }
             
             setTitle('');
